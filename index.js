@@ -13,6 +13,8 @@ class SoundByteInstance extends InstanceBase {
 		}
 		
 		this.pollInterval = null
+		this.soundsCheckInterval = null
+		this.connectionCheckInterval = null
 		this.http = null
 	}
 
@@ -24,10 +26,10 @@ class SoundByteInstance extends InstanceBase {
 		this.config.port = this.config.port || 3000
 		this.config.baseUrl = `http://${this.config.host}:${this.config.port}`
 		
-		// Initialize HTTP client
+		// Initialize HTTP client with faster timeout
 		this.http = axios.create({
 			baseURL: this.config.baseUrl,
-			timeout: 5000
+			timeout: 1000 // 1 second timeout for faster connection detection
 		})
 		
 		this.log('info', 'Initializing SoundByte Module')
@@ -42,15 +44,26 @@ class SoundByteInstance extends InstanceBase {
 		this.updateFeedbacks()
 		this.updateVariableDefinitions()
 		this.updatePresets()
+		
+		// Initial feedback check
+		this.checkFeedbacks()
 	}
 
 	async destroy() {
 		this.log('info', 'Destroying SoundByte Module')
 		
-		// Clear polling interval
+		// Clear polling intervals
 		if (this.pollInterval) {
 			clearInterval(this.pollInterval)
 			this.pollInterval = null
+		}
+		if (this.soundsCheckInterval) {
+			clearInterval(this.soundsCheckInterval)
+			this.soundsCheckInterval = null
+		}
+		if (this.connectionCheckInterval) {
+			clearInterval(this.connectionCheckInterval)
+			this.connectionCheckInterval = null
 		}
 		
 		this.updateStatus(InstanceStatus.Disconnected)
@@ -60,10 +73,10 @@ class SoundByteInstance extends InstanceBase {
 		this.config = config
 		this.config.baseUrl = `http://${this.config.host}:${this.config.port}`
 		
-		// Reinitialize HTTP client
+		// Reinitialize HTTP client with faster timeout
 		this.http = axios.create({
 			baseURL: this.config.baseUrl,
-			timeout: 5000
+			timeout: 1000 // 1 second timeout for faster connection detection
 		})
 		
 		await this.testConnection()
@@ -71,6 +84,9 @@ class SoundByteInstance extends InstanceBase {
 		this.updateFeedbacks()
 		this.updateVariableDefinitions()
 		this.updatePresets()
+		
+		// Refresh feedbacks after config update
+		this.checkFeedbacks()
 	}
 
 	getConfigFields() {
@@ -93,20 +109,68 @@ class SoundByteInstance extends InstanceBase {
 		]
 	}
 
+	haveSoundsChanged(newSounds) {
+		// Check if sounds list has changed
+		if (this.status.sounds.length !== newSounds.length) {
+			return true
+		}
+		
+		// Check if any sound names or properties have changed
+		for (const newSound of newSounds) {
+			const existingSound = this.status.sounds.find(s => s.id === newSound.id)
+			if (!existingSound) {
+				return true
+			}
+			
+			// Check if name, shortName, or color changed
+			if (existingSound.name !== newSound.name || 
+				existingSound.shortName !== newSound.shortName ||
+				existingSound.color !== newSound.color ||
+				existingSound.textColor !== newSound.textColor) {
+				this.log('debug', `Sound ${newSound.id} changed - Name: ${existingSound.name} -> ${newSound.name}, ShortName: ${existingSound.shortName} -> ${newSound.shortName}`)
+				return true
+			}
+		}
+		
+		return false
+	}
+
 	async testConnection() {
 		try {
 			// Test connection by getting sounds list
 			const response = await this.http.get('/api/sounds')
 			this.status.connected = true
-			this.status.sounds = response.data || []
+			
+			// Check if sounds have changed
+			const newSounds = response.data || []
+			const soundsChanged = this.haveSoundsChanged(newSounds)
+			
+			this.status.sounds = newSounds
 			this.updateStatus(InstanceStatus.Ok)
 			this.log('info', `Connected to SoundByte - Found ${this.status.sounds.length} sounds`)
 			
-			// Initialize playing states
+			// Log color information for each sound
+			for (const sound of this.status.sounds) {
+				this.log('debug', `Sound ${sound.name} (ID: ${sound.id}) - Color: ${sound.color || 'none'}, TextColor: ${sound.textColor || 'none'}`)
+			}
+			
+			// Initialize playing states to false and get actual status
 			this.status.playingStates.clear()
 			for (const sound of this.status.sounds) {
 				this.status.playingStates.set(sound.id, false)
 			}
+			
+			// If sounds changed, update everything
+			if (soundsChanged) {
+				this.log('info', 'Sounds changed - updating actions, feedbacks, variables and presets')
+				this.updateActions()
+				this.updateFeedbacks()
+				this.updateVariableDefinitions()
+				this.updatePresets()
+			}
+			
+			// Get actual playing status immediately to avoid false positives
+			await this.pollSoundStates()
 			
 			return true
 		} catch (error) {
@@ -119,15 +183,87 @@ class SoundByteInstance extends InstanceBase {
 	}
 
 	startPolling() {
-		// Clear any existing interval
+		// Clear any existing intervals
 		if (this.pollInterval) {
 			clearInterval(this.pollInterval)
 		}
+		if (this.soundsCheckInterval) {
+			clearInterval(this.soundsCheckInterval)
+		}
+		if (this.connectionCheckInterval) {
+			clearInterval(this.connectionCheckInterval)
+		}
 		
-		// Poll every 1 second for sound status
+				// Start polling after a short delay to ensure initial status is set
+		setTimeout(() => {
+		// Poll every 250ms for sound status (ultra-fast)
 		this.pollInterval = setInterval(() => {
 			this.pollSoundStates()
-		}, 1000)
+		}, 250)
+		
+		// Poll every 100ms to check for sound changes (ultra-quick updates)
+		this.soundsCheckInterval = setInterval(() => {
+			this.checkSoundChanges()
+		}, 100)
+		
+		// Poll every 500ms to check connection status
+		this.connectionCheckInterval = setInterval(() => {
+			this.checkConnection()
+		}, 500)
+		}, 100) // 100ms delay before starting regular polling
+	}
+
+	async checkConnection() {
+		try {
+			// Quick connection check
+			const response = await this.http.get('/api/sounds')
+			
+			if (!this.status.connected) {
+				this.log('info', 'Connection restored to SoundByte')
+				this.status.connected = true
+				this.updateStatus(InstanceStatus.Ok)
+				this.updateVariableValues()
+				this.checkFeedbacks()
+			}
+		} catch (error) {
+			if (this.status.connected) {
+				this.log('warning', 'Lost connection to SoundByte')
+				this.status.connected = false
+				this.updateStatus(InstanceStatus.ConnectionFailure, 'Connection lost')
+				this.updateVariableValues()
+				this.checkFeedbacks()
+			}
+		}
+	}
+
+	async checkSoundChanges() {
+		if (!this.status.connected) {
+			return
+		}
+		
+		try {
+			// Get updated sounds list
+			const response = await this.http.get('/api/sounds')
+			const newSounds = response.data || []
+			
+			// Check if sounds have changed
+			if (this.haveSoundsChanged(newSounds)) {
+				this.log('info', 'Sounds changed - updating in real-time')
+				this.status.sounds = newSounds
+				
+				// Update everything quickly
+				this.updateActions()
+				this.updateFeedbacks()
+				this.updateVariableDefinitions()
+				this.updatePresets()
+				
+				// Force immediate feedback and variable updates
+				this.updateVariableValues()
+				this.checkFeedbacks()
+			}
+		} catch (error) {
+			this.log('debug', `Error checking sound changes: ${error.message}`)
+		}
 	}
 
 	async pollSoundStates() {
@@ -144,21 +280,27 @@ class SoundByteInstance extends InstanceBase {
 					const isPlaying = response.data.isPlaying || false
 					const wasPlaying = this.status.playingStates.get(sound.id) || false
 					
+					this.log('debug', `API Status for ${sound.name} (ID: ${sound.id}): isPlaying=${isPlaying}, wasPlaying=${wasPlaying}`)
+					
 					if (isPlaying !== wasPlaying) {
 						this.status.playingStates.set(sound.id, isPlaying)
 						hasChanges = true
+						this.log('debug', `Sound ${sound.name} (ID: ${sound.id}) status changed: ${wasPlaying} -> ${isPlaying}`)
 					}
 				} catch (error) {
 					// Individual sound status check failed, set to not playing
 					if (this.status.playingStates.get(sound.id)) {
 						this.status.playingStates.set(sound.id, false)
 						hasChanges = true
+						this.log('debug', `Sound ${sound.name} (ID: ${sound.id}) status check failed, setting to not playing`)
 					}
 				}
 			}
 			
 			// Update feedbacks and variables if there were changes
 			if (hasChanges) {
+				const playingCount = Array.from(this.status.playingStates.values()).filter(playing => playing).length
+				this.log('debug', `Playing count updated to: ${playingCount}`)
 				this.updateVariableValues()
 				this.checkFeedbacks()
 			}
@@ -207,31 +349,42 @@ class SoundByteInstance extends InstanceBase {
 		feedbacks.connection_status = {
 			type: 'boolean',
 			name: 'Connection Status',
-			description: 'Shows if connected to SoundByte',
+			description: 'Shows green when connected to SoundByte',
 			defaultStyle: {
 				color: 0xFFFFFF,
 				bgcolor: 0x008000
 			},
 			options: [],
 			callback: () => {
-				return this.status.connected
+				const connected = this.status.connected
+				this.log('debug', `Connection status feedback: ${connected}`)
+				return connected
 			}
 		}
 		
-		// Feedback for each sound (red when playing)
-		for (const sound of this.status.sounds) {
-			feedbacks[`sound_${sound.id}_playing`] = {
-				type: 'boolean',
-				name: `${sound.name} Playing`,
-				description: `Shows red when ${sound.name} is playing`,
-				defaultStyle: {
-					color: 0xFFFFFF,
-					bgcolor: 0xFF0000 // Red background when playing
-				},
-				options: [],
-				callback: () => {
-					return this.status.playingStates.get(sound.id) || false
+		// Generic feedback for sound playing status by ID
+		feedbacks.sound_playing_by_id = {
+			type: 'boolean',
+			name: 'Sound Playing by ID',
+			description: 'Shows red when the specified sound is playing',
+			defaultStyle: {
+				color: 0xFFFFFF,
+				bgcolor: 0xFF0000
+			},
+			options: [
+				{
+					type: 'number',
+					label: 'Sound ID',
+					id: 'soundId',
+					default: 1,
+					min: 1
 				}
+			],
+			callback: (feedback) => {
+				const soundId = feedback.options.soundId
+				const isPlaying = this.status.playingStates.get(soundId) || false
+				this.log('debug', `Generic feedback for sound ID ${soundId}: ${isPlaying}`)
+				return isPlaying
 			}
 		}
 		
@@ -239,14 +392,16 @@ class SoundByteInstance extends InstanceBase {
 		feedbacks.any_sound_playing = {
 			type: 'boolean',
 			name: 'Any Sound Playing',
-			description: 'Shows if any sound is currently playing',
+			description: 'Shows orange when any sound is playing',
 			defaultStyle: {
 				color: 0xFFFFFF,
-				bgcolor: 0xFF8000 // Orange background when any sound is playing
+				bgcolor: 0xFF8000
 			},
 			options: [],
 			callback: () => {
-				return Array.from(this.status.playingStates.values()).some(playing => playing)
+				const anyPlaying = Array.from(this.status.playingStates.values()).some(playing => playing)
+				this.log('debug', `Any sound playing feedback: ${anyPlaying}`)
+				return anyPlaying
 			}
 		}
 		
@@ -273,6 +428,14 @@ class SoundByteInstance extends InstanceBase {
 			}
 		]
 		
+		// Add individual variables for each sound name
+		for (const sound of this.status.sounds) {
+			variables.push({
+				name: `${sound.name} Name`,
+				variableId: `sound_${sound.id}_name`
+			})
+		}
+		
 		this.setVariableDefinitions(variables)
 		this.updateVariableValues()
 	}
@@ -290,6 +453,11 @@ class SoundByteInstance extends InstanceBase {
 			currently_playing: playingSounds.length > 0 ? playingSounds.join(', ') : 'None'
 		}
 		
+		// Add individual sound name variables
+		for (const sound of this.status.sounds) {
+			values[`sound_${sound.id}_name`] = sound.shortName || sound.name
+		}
+		
 		this.setVariableValues(values)
 	}
 
@@ -302,10 +470,10 @@ class SoundByteInstance extends InstanceBase {
 			category: 'Status',
 			name: 'Connection Status',
 			style: {
-				text: 'SoundByte\\n$(soundbyte:connection_status)',
+				text: 'SOUND BYTE',
 				size: '14',
 				color: 0xFFFFFF,
-				bgcolor: 0x000000
+				bgcolor: 0xFF0000 // Red when disconnected
 			},
 			steps: [
 				{
@@ -319,8 +487,14 @@ class SoundByteInstance extends InstanceBase {
 					options: {},
 					style: {
 						color: 0xFFFFFF,
-						bgcolor: 0x008000
+						bgcolor: 0x008000 // Green when connected
 					}
+				}
+			],
+			backgrounds: [
+				{
+					type: 'solid',
+					color: 0xFF0000 // Red when disconnected
 				}
 			]
 		})
@@ -356,6 +530,12 @@ class SoundByteInstance extends InstanceBase {
 						bgcolor: 0xFF4000
 					}
 				}
+			],
+			backgrounds: [
+				{
+					type: 'solid',
+					color: 0x800000
+				}
 			]
 		})
 		
@@ -385,27 +565,39 @@ class SoundByteInstance extends InstanceBase {
 						bgcolor: 0xFF8000
 					}
 				}
+			],
+			backgrounds: [
+				{
+					type: 'solid',
+					color: 0x404040
+				}
 			]
 		})
 		
 		// Create presets for all available sounds
 		for (const sound of this.status.sounds) {
+			// Use the sound's color from the API, or default to gray
+			const soundColor = sound.color || 0x404040
+			const textColor = sound.textColor || 0xFFFFFF
+			
 			presets.push({
 				type: 'button',
 				category: 'Sounds',
 				name: sound.name,
 				style: {
-					text: sound.shortName || sound.name,
+					text: `$(soundbyte:sound_${sound.id}_name)`,
 					size: '14',
-					color: 0xFFFFFF,
-					bgcolor: 0x404040
+					color: textColor,
+					bgcolor: soundColor
 				},
 				steps: [
 					{
 						down: [
 							{
-								actionId: `play_${sound.id}`,
-								options: {}
+								actionId: 'play_sound_by_id',
+								options: {
+									soundId: sound.id
+								}
 							}
 						],
 						up: []
@@ -413,12 +605,20 @@ class SoundByteInstance extends InstanceBase {
 				],
 				feedbacks: [
 					{
-						feedbackId: `sound_${sound.id}_playing`,
-						options: {},
+						feedbackId: 'sound_playing_by_id',
+						options: {
+							soundId: sound.id
+						},
 						style: {
 							color: 0xFFFFFF,
-							bgcolor: 0xFF0000 // Red when playing
+							bgcolor: 0xFF0000
 						}
+					}
+				],
+				backgrounds: [
+					{
+						type: 'solid',
+						color: soundColor
 					}
 				]
 			})
@@ -436,8 +636,14 @@ class SoundByteInstance extends InstanceBase {
 				// Update local state immediately for better responsiveness
 				const isPlaying = response.data.action === 'playing'
 				this.status.playingStates.set(soundId, isPlaying)
+				this.log('debug', `Toggle: Sound ${soundId} set to playing=${isPlaying}`)
 				this.updateVariableValues()
-				this.checkFeedbacks()
+				this.checkFeedbacks('all')
+				
+				// Force immediate feedback update
+				setTimeout(() => {
+					this.checkFeedbacks()
+				}, 100)
 			} else {
 				this.log('error', `Failed to toggle sound ${soundId}: ${response.data.message}`)
 			}
