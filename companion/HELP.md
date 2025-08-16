@@ -28,7 +28,7 @@ When adding the module in Companion, you will be prompted for:
   Sound names and colors are exposed for use in button labels and variables.
 
 - **Real-time Status Monitoring**  
-  Connection state and sound playback status are monitored and updated automatically.  
+  Connection state and sound playback status are monitored and updated automatically.
 
 ---
 

@@ -1,31 +1,31 @@
 {
-  "id": "broadcastapps-soundbyte",
-  "name": "SoundByte",
-  "shortname": "broadcastapps-soundbyte",
-  "description": "Control your SoundByte sound board with play/stop buttons and red feedback for playing sounds",
-  "version": "1.0.0",
-  "license": "MIT",
-  "homepage": "https://github.com/companion-modules/companion-module-broadcastapps-soundbyte",
-  "repository": "git+https://github.com/companion-modules/companion-module-broadcastapps-soundbyte.git",
-  "bugs": "https://github.com/companion-modules/companion-module-broadcastapps-soundbyte/issues",
-  "maintainers": [
-    {
-      "name": "SoundByte",
-      "email": "support@broadcastapps.com"
-    }
-  ],
-  "runtime": {
-    "type": "node18",
-    "api": "nodejs-ipc",
-    "apiVersion": "1.0.0",
-    "entrypoint": "../index.js"
-  },
-  "legacyIds": [],
-  "minServerVersion": "3.0.0",
-  "manufacturer": "BroadcastApps",
-  "products": ["SoundByte"],
-  "keywords": ["Audio", "Sound Board"],
-  "dependencies": ["@companion-module/base"],
-  "category": "Audio",
-  "tags": ["stable"]
-} 
+	"id": "broadcastapps-soundbyte",
+	"name": "SoundByte",
+	"shortname": "broadcastapps-soundbyte",
+	"description": "Control your SoundByte sound board with play/stop buttons and red feedback for playing sounds",
+	"version": "1.0.0",
+	"license": "MIT",
+	"homepage": "https://github.com/companion-modules/companion-module-broadcastapps-soundbyte",
+	"repository": "git+https://github.com/companion-modules/companion-module-broadcastapps-soundbyte.git",
+	"bugs": "https://github.com/companion-modules/companion-module-broadcastapps-soundbyte/issues",
+	"maintainers": [
+		{
+			"name": "SoundByte",
+			"email": "support@broadcastapps.com"
+		}
+	],
+	"runtime": {
+		"type": "node18",
+		"api": "nodejs-ipc",
+		"apiVersion": "1.0.0",
+		"entrypoint": "../index.js"
+	},
+	"legacyIds": [],
+	"minServerVersion": "3.0.0",
+	"manufacturer": "BroadcastApps",
+	"products": ["SoundByte"],
+	"keywords": ["Audio", "Sound Board"],
+	"dependencies": ["@companion-module/base"],
+	"category": "Audio",
+	"tags": ["stable"]
+}

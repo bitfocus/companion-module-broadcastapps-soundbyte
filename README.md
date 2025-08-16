@@ -26,4 +26,4 @@ If you encounter any issues or have suggestions for improvements, please report 
 
 ## License
 
-MIT License 
+MIT License
