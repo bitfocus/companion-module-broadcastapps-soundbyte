@@ -1,7 +1,7 @@
 {
-  "name": "companion-module-soundbyte",
+  "name": "companion-module-broadcastapps-soundbyte",
   "version": "1.0.0",
-  "description": "BitFocus Companion module for SoundByte sound board application",
+  "description": "BitFocus Companion module for BroadcastApps SoundByte sound board application",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -12,7 +12,7 @@
     "soundboard",
     "audio"
   ],
-  "author": "SoundByte",
+  "author": "BroadcastApps",
   "license": "MIT",
   "dependencies": {
     "@companion-module/base": "^1.0.0",
@@ -20,9 +20,9 @@
   },
   "companion": {
     "name": "SoundByte",
-    "manufacturer": "SoundByte",
+    "manufacturer": "BroadcastApps",
     "category": "Audio",
-    "shortname": "soundbyte",
+    "shortname": "broadcastapps-soundbyte",
     "description": "Control your SoundByte sound board with play/stop buttons and red feedback for playing sounds",
     "version": "1.0.0",
     "help": "This module allows you to control your SoundByte application. Configure the host IP (same as port, default 3000) and you'll get presets for all sounds in your /sounds folder with start/stop functionality and red feedback when sounds are playing.",
